@@ -1,7 +1,8 @@
-"""Sensors for N.I.N.A. Astrophotography integration."""
+"""Sensors for N.I.N.A. Astrophotography integration — corrected for v2.2.15 API."""
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,9 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class NinaSensorDescription(SensorEntityDescription):
-    """Extends SensorEntityDescription with a data path callable."""
-
-    value_fn: Any = None  # Callable[[dict], Any]
+    value_fn: Any = None
 
 
 def _safe(data: dict, *keys: str, default=None):
@@ -41,9 +40,27 @@ def _safe(data: dict, *keys: str, default=None):
     return d
 
 
-# ─── Sensor descriptors ───────────────────────────────────────────────────────
+def _safe_float(data: dict, *keys: str, default=None):
+    """Traverse dict and return float, treating 'NaN' strings as None."""
+    v = _safe(data, *keys, default=default)
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if math.isnan(f) else round(f, 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _latest_stat(data: dict, stat_key: str) -> Any:
+    history = _safe(data, "image_history", "Response", default=[])
+    if history and isinstance(history, list):
+        return history[0].get(stat_key)
+    return None
+
 
 SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
+
     # ── Camera ────────────────────────────────────────────────────────────
     NinaSensorDescription(
         key="camera_temperature",
@@ -52,7 +69,8 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:thermometer",
-        value_fn=lambda d: _safe(d, "camera", "Response", "Temperature"),
+        # API returns "Temperature" key; can be "NaN" string when sensor not available
+        value_fn=lambda d: _safe_float(d, "camera", "Response", "Temperature"),
     ),
     NinaSensorDescription(
         key="camera_target_temperature",
@@ -62,7 +80,8 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:thermometer-lines",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: _safe(d, "camera", "Response", "TemperatureSetPoint"),
+        # API key is "TargetTemp" NOT "TemperatureSetPoint"
+        value_fn=lambda d: _safe_float(d, "camera", "Response", "TargetTemp"),
     ),
     NinaSensorDescription(
         key="camera_cooler_power",
@@ -70,21 +89,27 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:snowflake",
-        value_fn=lambda d: _safe(d, "camera", "Response", "CoolerPower"),
+        # API key "CoolerPower" can be "NaN" string
+        value_fn=lambda d: _safe_float(d, "camera", "Response", "CoolerPower"),
     ),
     NinaSensorDescription(
         key="camera_gain",
         name="Camera Gain",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:camera-iris",
-        value_fn=lambda d: _safe(d, "camera", "Response", "Gain"),
+        # -1 means not available/not connected
+        value_fn=lambda d: (
+            v if (v := _safe(d, "camera", "Response", "Gain")) not in (None, -1) else None
+        ),
     ),
     NinaSensorDescription(
         key="camera_offset",
         name="Camera Offset",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:tune",
-        value_fn=lambda d: _safe(d, "camera", "Response", "Offset"),
+        value_fn=lambda d: (
+            v if (v := _safe(d, "camera", "Response", "Offset")) not in (None, -1) else None
+        ),
     ),
     NinaSensorDescription(
         key="camera_status",
@@ -93,9 +118,17 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         value_fn=lambda d: _safe(d, "camera", "Response", "CameraState"),
     ),
     NinaSensorDescription(
+        key="camera_name",
+        name="Camera Name",
+        icon="mdi:camera",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: _safe(d, "camera", "Response", "Name"),
+    ),
+    NinaSensorDescription(
         key="camera_current_filter",
         name="Current Filter",
         icon="mdi:filter",
+        # Filter comes from filterwheel, not camera
         value_fn=lambda d: _safe(d, "filterwheel", "Response", "SelectedFilter", "Name"),
     ),
 
@@ -106,7 +139,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement="h",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:telescope",
-        value_fn=lambda d: round(_safe(d, "mount", "Response", "RightAscension", default=0), 4),
+        value_fn=lambda d: _safe_float(d, "mount", "Response", "RightAscension"),
     ),
     NinaSensorDescription(
         key="mount_dec",
@@ -114,7 +147,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement=DEGREE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:telescope",
-        value_fn=lambda d: round(_safe(d, "mount", "Response", "Declination", default=0), 4),
+        value_fn=lambda d: _safe_float(d, "mount", "Response", "Declination"),
     ),
     NinaSensorDescription(
         key="mount_altitude",
@@ -122,7 +155,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement=DEGREE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:arrow-up-circle",
-        value_fn=lambda d: round(_safe(d, "mount", "Response", "Altitude", default=0), 2),
+        value_fn=lambda d: _safe_float(d, "mount", "Response", "Altitude"),
     ),
     NinaSensorDescription(
         key="mount_azimuth",
@@ -130,7 +163,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement=DEGREE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:compass",
-        value_fn=lambda d: round(_safe(d, "mount", "Response", "Azimuth", default=0), 2),
+        value_fn=lambda d: _safe_float(d, "mount", "Response", "Azimuth"),
     ),
     NinaSensorDescription(
         key="mount_sidereal_time",
@@ -139,7 +172,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:clock-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: _safe(d, "mount", "Response", "SiderealTime"),
+        value_fn=lambda d: _safe_float(d, "mount", "Response", "SiderealTime"),
     ),
     NinaSensorDescription(
         key="mount_time_to_meridian_flip",
@@ -147,12 +180,13 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement="min",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:swap-horizontal",
-        value_fn=lambda d: _safe(d, "mount", "Response", "TimeToMeridianFlip"),
+        value_fn=lambda d: _safe_float(d, "mount", "Response", "TimeToMeridianFlip"),
     ),
     NinaSensorDescription(
         key="mount_status",
-        name="Mount Status",
+        name="Mount Name",
         icon="mdi:crosshairs-gps",
+        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: _safe(d, "mount", "Response", "Name"),
     ),
 
@@ -172,13 +206,16 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:thermometer",
-        value_fn=lambda d: _safe(d, "focuser", "Response", "Temperature"),
+        value_fn=lambda d: _safe_float(d, "focuser", "Response", "Temperature"),
     ),
     NinaSensorDescription(
-        key="focuser_status",
-        name="Focuser Status",
-        icon="mdi:focus-field-horizontal",
-        value_fn=lambda d: _safe(d, "focuser", "Response", "Name"),
+        key="focuser_step_size",
+        name="Focuser Step Size",
+        native_unit_of_measurement="μm",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:ruler",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: _safe_float(d, "focuser", "Response", "StepSize"),
     ),
 
     # ── Guider ────────────────────────────────────────────────────────────
@@ -188,7 +225,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement="arcsec",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:chart-scatter-plot",
-        value_fn=lambda d: _safe(d, "guider", "Response", "RMSError", "Total", "Arcseconds"),
+        value_fn=lambda d: _safe_float(d, "guider", "Response", "RMSError", "Total", "Arcseconds"),
     ),
     NinaSensorDescription(
         key="guider_rms_ra",
@@ -196,7 +233,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement="arcsec",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:arrow-left-right",
-        value_fn=lambda d: _safe(d, "guider", "Response", "RMSError", "RA", "Arcseconds"),
+        value_fn=lambda d: _safe_float(d, "guider", "Response", "RMSError", "RA", "Arcseconds"),
     ),
     NinaSensorDescription(
         key="guider_rms_dec",
@@ -204,7 +241,7 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement="arcsec",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:arrow-up-down",
-        value_fn=lambda d: _safe(d, "guider", "Response", "RMSError", "Dec", "Arcseconds"),
+        value_fn=lambda d: _safe_float(d, "guider", "Response", "RMSError", "Dec", "Arcseconds"),
     ),
     NinaSensorDescription(
         key="guider_status",
@@ -242,21 +279,21 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         native_unit_of_measurement="px",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:star-four-points",
-        value_fn=lambda d: _get_latest_image_stat(d, "HFR"),
+        value_fn=lambda d: _latest_stat(d, "HFR"),
     ),
     NinaSensorDescription(
         key="image_last_star_count",
         name="Last Image Star Count",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:star-shooting",
-        value_fn=lambda d: _get_latest_image_stat(d, "DetectedStars"),
+        value_fn=lambda d: _latest_stat(d, "DetectedStars"),
     ),
     NinaSensorDescription(
         key="image_last_mean_adu",
         name="Last Image Mean ADU",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:chart-histogram",
-        value_fn=lambda d: _get_latest_image_stat(d, "Mean"),
+        value_fn=lambda d: _latest_stat(d, "Mean"),
     ),
     NinaSensorDescription(
         key="image_count",
@@ -268,27 +305,10 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
 ]
 
 
-def _get_latest_image_stat(data: dict, stat_key: str) -> Any:
-    """Retrieve a stat from the first (latest) image in history."""
-    history = _safe(data, "image_history", "Response", default=[])
-    if history and isinstance(history, list):
-        return history[0].get(stat_key)
-    return None
-
-
-# ─── Entity base ─────────────────────────────────────────────────────────────
-
 class NinaSensor(CoordinatorEntity[NinaDataCoordinator], SensorEntity):
-    """A sensor entity backed by the N.I.N.A. coordinator."""
-
     entity_description: NinaSensorDescription
 
-    def __init__(
-        self,
-        coordinator: NinaDataCoordinator,
-        description: NinaSensorDescription,
-        entry_id: str,
-    ) -> None:
+    def __init__(self, coordinator, description, entry_id):
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{entry_id}_{description.key}"
@@ -300,23 +320,17 @@ class NinaSensor(CoordinatorEntity[NinaDataCoordinator], SensorEntity):
         }
 
     @property
-    def native_value(self) -> Any:
+    def native_value(self):
         if self.entity_description.value_fn and self.coordinator.data:
             try:
                 return self.entity_description.value_fn(self.coordinator.data)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return None
         return None
 
 
-# ─── Platform setup ───────────────────────────────────────────────────────────
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    coordinator: NinaDataCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+async def async_setup_entry(hass, entry, async_add_entities):
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     async_add_entities(
         NinaSensor(coordinator, description, entry.entry_id)
         for description in SENSOR_DESCRIPTIONS

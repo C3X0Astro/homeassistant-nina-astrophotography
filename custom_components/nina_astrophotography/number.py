@@ -98,7 +98,7 @@ NUMBER_DESCRIPTIONS: list[NinaNumberDescription] = [
         native_max_value=20,
         native_step=0.5,
         mode=NumberMode.BOX,
-        value_fn=lambda d: _safe(d, "camera", "Response", "TemperatureSetPoint"),
+        value_fn=lambda d: _safe(d, "camera", "Response", "TargetTemp"),
         # Calling cool with 0 minutes starts cooling at the new setpoint instantly
         set_fn=lambda client, v: client.cool_camera(temperature=v, minutes=0),
     ),
