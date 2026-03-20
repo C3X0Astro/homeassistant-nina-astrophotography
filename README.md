@@ -22,7 +22,7 @@ Connect [N.I.N.A. (Nighttime Imaging 'N' Astronomy)](https://nighttime-imaging.e
 
 ### HACS (recommended)
 
-> Full HACS listing coming soon. In the meantime use the manual method.
+> Set this repo as a custom repository in HACS and install directly
 
 ### Manual
 
