@@ -4,6 +4,86 @@ All notable changes to the N.I.N.A. Astrophotography Home Assistant integration 
 
 ---
 
+## [1.3.0] - 2026-03-20
+
+### Added
+
+#### Image streaming via Advanced API (`api.py`)
+Added `get_image_bytes()` and `get_image_stream_url()` methods to `NinaApiClient`. The Advanced API v2.2.x serves JPEG frames directly at:
+
+```
+GET /v2/api/image?index=0&stream=true&useAutoStretch=true
+```
+
+`index=0` returns the most recent frame; `index=1` returns the one before it, and so on through history. `useAutoStretch=true` applies N.I.N.A.'s auto-stretch so the image is viewable without further processing.
+
+#### HA Image entity — `image.nina_latest_captured_frame` (`image.py`)
+A native Home Assistant `ImageEntity` that fetches JPEG bytes from the streaming endpoint on demand. Behaviour:
+- Automatically marks itself updated the instant an `IMAGE-SAVE` WebSocket event fires — no polling delay
+- Compatible with the built-in **Picture Entity Card** and any HA integration that reads image entities
+- Returns cached bytes on network error so the last good frame remains visible after a brief disconnect
+- `image_last_updated` timestamp advances on every new frame, triggering browser cache invalidation in frontend cards
+
+Use in any standard HA card:
+```yaml
+type: picture-entity
+entity: image.nina_latest_captured_frame
+```
+
+#### Image Panel Lovelace Card — `www/nina-image-panel-card.js`
+A full-featured image viewer card fetching frames directly from the N.I.N.A. PC streaming endpoint.
+
+**Features:**
+- Live image display with auto-refresh on `nina_image_save` HA events
+- Stats overlay on the image: filter name, HFR, star count, guide RMS string, target name
+- Animated exposing indicator bar while `binary_sensor.camera_exposing` is `on`
+- **ADU histogram** synthesised from `sensor.last_frame_min_adu`, `max_adu`, `mean_adu`, `median_adu` — shows approximate pixel distribution with mean (teal) and median (dashed) marker lines and a saturation warning zone
+- **Stats row** below the image: HFR (green < 2px / amber > 3.5px), star count, mean ADU, exposure time
+- **Recent frames strip**: last 6 thumbnails loaded at reduced quality (40%) for fast rendering, with filter labels overlaid; click any thumbnail to jump to that frame
+- **Click-to-fullscreen**: click the image to open a modal showing the full-quality version
+- Graceful no-image state with setup hint before the first frame is captured
+
+**Card configuration:**
+```yaml
+type: custom:nina-image-panel-card
+host: 192.168.1.100      # N.I.N.A. PC IP address (required)
+port: 1888               # API port (default: 1888)
+stretch: true            # Apply N.I.N.A. auto-stretch (default: true)
+quality: 85              # JPEG quality 1–100 (default: 85)
+show_strip: true         # Show recent frames strip (default: true)
+show_histogram: true     # Show ADU histogram (default: true)
+strip_count: 6           # Thumbnails in strip (default: 6)
+refresh_on_save: true    # Auto-refresh on IMAGE-SAVE event (default: true)
+```
+
+> **Note:** The card fetches images directly from the N.I.N.A. PC, not proxied through HA. Your browser must be able to reach `host:port` on your local network. This works on a home LAN. For remote access outside your network, use a VPN.
+
+> **Prerequisite:** Ensure **Create Thumbnails** is enabled in the Advanced API plugin settings in N.I.N.A. (it was visible as ON in the plugin screenshot).
+
+#### Sky Map Lovelace Card — `www/nina-sky-map-card.js`
+An all-sky stereographic projection showing live telescope pointing.
+
+**Features:**
+- Stereographic polar projection (standard planisphere view): zenith at centre, horizon as outer green ring, North at top
+- Altitude rings at 15°/30°/45°/60°/75° with degree labels
+- Dashed azimuth spokes every 45°, N/S/E/W compass labels
+- **Star field**: 40 bright stars (Sirius through Polaris) projected from RA/Dec using the observer's latitude and the mount's sidereal time (`sensor.mount_sidereal_time`) — rotates correctly as the night progresses. Orion belt stars connected with faint constellation lines. Subtle Milky Way band
+- **Meridian line**: dashed purple line. Pulses amber and shows countdown label when `sensor.mount_time_to_meridian_flip` < 15 minutes
+- **Telescope reticle**: crosshair + circle at current Alt/Az position with soft glow. Colour reflects mount state — teal (tracking), amber (parked), orange-red (slewing)
+- **Pointing trail**: last 60 positions drawn as a fading teal line
+- Info row: altitude, azimuth, RA (h m s format), Dec (° ′ ″ format)
+- Status bar: tracking / parked / slewing / disconnected state
+
+**Card configuration:**
+```yaml
+type: custom:nina-sky-map-card
+latitude: 38.5      # Your observing latitude — improves star field accuracy (default: 40)
+trail_length: 60    # Historical positions in trail (default: 60)
+map_size: 320       # Canvas diameter in px (default: 320)
+```
+
+---
+
 ## [1.2.0] - 2026-03-20
 
 ### Added

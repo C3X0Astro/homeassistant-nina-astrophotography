@@ -1,9 +1,3 @@
-> [!NOTE]
-> **AI-Assisted Development**
-> This integration was built with the assistance of [Claude](https://claude.ai) (Anthropic). All code has been reviewed, tested against a live N.I.N.A. instance, and is maintained by a human author. AI assistance was used to accelerate development — the design decisions, testing, and ongoing maintenance are my own.
-> [![AI Assisted](https://img.shields.io/badge/built%20with-Claude%20AI-7b8de8?style=flat-square&logo=anthropic)](https://claude.ai)
-
-
 # N.I.N.A. Astrophotography – Home Assistant Integration
 
 Connect [N.I.N.A. (Nighttime Imaging 'N' Astronomy)](https://nighttime-imaging.eu) to Home Assistant via the **[Advanced API plugin](https://github.com/christian-photo/ninaAPI)** (v2).  Monitor all equipment in real time and control your rig directly from HA automations, dashboards, and scripts.
@@ -24,7 +18,7 @@ Connect [N.I.N.A. (Nighttime Imaging 'N' Astronomy)](https://nighttime-imaging.e
 
 ### HACS (recommended)
 
-> Set this repo as a custom repository in HACS and install directly
+> Full HACS listing coming soon. In the meantime use the manual method.
 
 ### Manual
 

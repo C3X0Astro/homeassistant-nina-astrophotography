@@ -302,6 +302,8 @@ SENSOR_DESCRIPTIONS: list[NinaSensorDescription] = [
         icon="mdi:image-multiple",
         value_fn=lambda d: len(_safe(d, "image_history", "Response", default=[])),
     ),
+
+
 ]
 
 
