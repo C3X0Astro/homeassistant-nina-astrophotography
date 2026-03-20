@@ -419,9 +419,15 @@ Then use **Settings → Automations → Import Blueprint** or just reference the
 
 ---
 
-## Custom Lovelace Card
+## Custom Lovelace Card(s)
 
-Copy `www/nina-observatory-card.js` to your HA `/config/www/` folder, then register it:
+Copy the following to your HA `/config/www/` folder, then register them:
+ 
+`www/nina-observatory-card.js`
+`www/nina-frame-stats-card.js`
+`www/nina-image-panel-card.js`
+`www/nina-sky-map-card.js`
+`www/nina-weather-card.js`
 
 ```yaml
 # configuration.yaml  (or via UI: Settings → Dashboards → Resources)
@@ -435,9 +441,13 @@ Add to any dashboard:
 
 ```yaml
 type: custom:nina-observatory-card
+type: custom:nina-frame-stats-card
+type: custom:nina-image-panel-card
+type: custom:nina-sky-map-card
+type: custom:nina-weather-card
 ```
 
-The card provides:
+The Observatory Card provides:
 - Live session banner with target name and progress bar
 - Equipment connectivity chips (Camera, Mount, Focuser, Filter Wheel, Guider, Dome)
 - Meridian flip countdown warning
@@ -448,6 +458,30 @@ The card provides:
 - Last image HFR, star count and mean ADU
 - One-tap control buttons: Start/Stop Sequence, Park/Unpark, Auto Focus,
   Open/Close Dome, Cool/Warm Camera, Start/Stop Guiding, Dither
+
+The Frame Stats Card provides:
+- live per-frame HFR trend, star count, ADU sparklines
+- per-filter frame counts
+- all driven by IMAGE-SAVE WebSocket events
+ 
+The Image Panel Card provides:
+- Latest image display
+- previous 5 image history
+- RMS, HFR, ADU, Exposure and Star count stats
+ 
+The Sky Map Card provides:
+- A live star chart
+- Reticle indicating current pointing direction (trails indicate recent movements)
+- Current Target coordinates (RA/Dec and Alt/Az)
+- mount tracking status
+ 
+The Weather Card provides:
+- Safety Monitor
+- Atmospheric Conditions - Temperature, Humiidity, DewPoint, Air Pressue
+- Ground level wind conditions
+- Sky/Viewing Conditions - Cloud cover, Rain Rate, Sky Temp, and Seeing Quality
+- Tied to weather monitor in N.I.N.A.
+ 
 
 
 ## Troubleshooting
