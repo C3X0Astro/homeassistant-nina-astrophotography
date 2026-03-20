@@ -4,6 +4,31 @@ All notable changes to the N.I.N.A. Astrophotography Home Assistant integration 
 
 ---
 
+## [1.4.2] - 2026-03-20
+
+### Fixed
+
+#### WebSocket URL corrected from /v2 to /v2/socket (websocket.py)
+The WebSocket client was connecting to ws://HOST:1888/v2, which is the HTTP REST
+API prefix — not a valid WebSocket endpoint. The correct URL per the ninaAPI v2
+documentation is ws://HOST:1888/v2/socket.
+EmbedIO (the web server used by the Advanced API plugin) returns a 404 HTTP response
+when a WebSocket upgrade is attempted at an unregistered path, causing the client to
+retry every 5 seconds with exponential backoff. This produced the repeated log entry:
+N.I.N.A. WebSocket: unexpected error: 404, message='Invalid response status',
+url='ws://10.0.20.96:1888/v2'
+With this fix the WebSocket connects successfully on the first attempt, enabling
+all push-driven features that depend on it:
+
+IMAGE-SAVE events → per-frame statistics sensors update instantly on capture
+SEQUENCE-STARTING events → session frame stats reset for each new sequence
+MOUNT-BEFORE-FLIP / MOUNT-AFTER-FLIP events → meridian flip automations
+All other ninaAPI WebSocket events fire correctly as native HA events
+
+Impact: Every installation running v1.0.0–v1.4.1 has had non-functional
+WebSocket push events. Polling-based sensors (all REST endpoint sensors) were
+unaffected and continued to work normally.
+
 ## [1.4.1] - 2026-03-20
 
 ### Fixed
