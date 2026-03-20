@@ -4,6 +4,31 @@ All notable changes to the N.I.N.A. Astrophotography Home Assistant integration 
 
 ---
 
+## [1.4.1] - 2026-03-20
+
+### Fixed
+
+#### Mount endpoint corrected in `api.py`
+All mount/telescope API calls were targeting `/equipment/telescope/...` but the
+N.I.N.A. Advanced API v2.2.x routes these under `/equipment/mount/...`. This caused
+all mount sensors (RA, Dec, altitude, azimuth, time to meridian flip, sidereal time)
+and all mount control services (park, unpark, slew, tracking, find home) to return
+404 errors.
+
+Affected methods updated:
+
+| Method | Old path | Corrected path |
+|---|---|---|
+| `get_mount()` | `/equipment/telescope/info` | `/equipment/mount/info` |
+| `connect_mount()` | `/equipment/telescope/connect` | `/equipment/mount/connect` |
+| `disconnect_mount()` | `/equipment/telescope/disconnect` | `/equipment/mount/disconnect` |
+| `slew_mount()` | `/equipment/telescope/slew-to-coordinates-j2000` | `/equipment/mount/slew-to-coordinates-j2000` |
+| `park_mount()` | `/equipment/telescope/park` | `/equipment/mount/park` |
+| `unpark_mount()` | `/equipment/telescope/unpark` | `/equipment/mount/unpark` |
+| `set_tracking()` | `/equipment/telescope/tracking` | `/equipment/mount/tracking` |
+| `find_home()` | `/equipment/telescope/find-home` | `/equipment/mount/find-home` |
+
+
 ## [1.4.0] - 2026-03-20
 
 ### Added
