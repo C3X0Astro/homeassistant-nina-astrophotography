@@ -94,7 +94,7 @@ class NinaApiClient:
 
     # Mount / Telescope
     async def get_mount(self):
-        return await self._get("/equipment/telescope/info")
+        return await self._get("/equipment/mount/info")
 
     async def connect_mount(self):
         return await self._get("/equipment/telescope/connect")
