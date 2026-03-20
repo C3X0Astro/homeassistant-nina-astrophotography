@@ -239,6 +239,38 @@ class NinaApiClient:
     async def get_latest_image(self):
         return await self._get("/image/latest")
 
+
+
+    # Image streaming — returns raw JPEG bytes (use stream=True)
+    async def get_image_stream_url(self, index: int = 0, quality: int = 85, stretch: bool = True) -> str:
+        """Return URL for fetching a JPEG image directly.
+        
+        The Advanced API streams the image when stream=true.
+        Use in the Lovelace card img src attribute.
+        """
+        params = f"index={index}&stream=true&quality={quality}"
+        if stretch:
+            params += "&useAutoStretch=true"
+        return f"{self._base}/image?{params}"
+
+    async def get_image_bytes(self, index: int = 0, quality: int = 85, stretch: bool = True) -> bytes:
+        """Fetch a JPEG image and return raw bytes. Used for HA image entities."""
+        url = self._base + "/image"
+        params = {"index": index, "stream": "true", "quality": quality}
+        if stretch:
+            params["useAutoStretch"] = "true"
+        try:
+            async with self._session.get(
+                url, params=params, timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+                raise NinaApiError(f"GET /image -> {resp.status}")
+        except aiohttp.ClientConnectorError as exc:
+            raise NinaConnectionError(f"Cannot reach N.I.N.A. at {url}") from exc
+        except asyncio.TimeoutError as exc:
+            raise NinaConnectionError(f"Timeout fetching image") from exc
+
     # Poll all equipment concurrently
     async def poll_all(self):
         """Fetch all equipment info concurrently. Returns {subsystem: data}."""
