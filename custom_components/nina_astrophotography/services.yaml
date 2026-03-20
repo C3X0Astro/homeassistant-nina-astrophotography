@@ -1,0 +1,225 @@
+camera_cool:
+  name: Cool Camera
+  description: Start cooling the camera sensor to a target temperature.
+  fields:
+    temperature:
+      name: Target Temperature (°C)
+      description: Target sensor temperature in degrees Celsius (e.g. -10).
+      required: true
+      example: -10
+      selector:
+        number:
+          min: -30
+          max: 30
+          unit_of_measurement: "°C"
+    minutes:
+      name: Ramp Time
+      description: Minutes over which to ramp to the target temperature.
+      default: 10
+      example: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+
+camera_warm:
+  name: Warm Camera
+  description: Gradually warm the camera sensor back to ambient temperature.
+  fields:
+    minutes:
+      name: Ramp Time
+      description: Minutes over which to ramp back to ambient.
+      default: 10
+      example: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+
+camera_capture:
+  name: Capture Image
+  description: Take a single camera exposure.
+  fields:
+    exposure:
+      name: Exposure
+      description: Exposure duration in seconds.
+      required: true
+      example: 120
+      selector:
+        number:
+          min: 0.001
+          max: 3600
+          unit_of_measurement: s
+          mode: box
+    gain:
+      name: Gain
+      description: Camera gain override (optional).
+      example: 100
+      selector:
+        number:
+          min: 0
+          max: 5000
+          mode: box
+    filter_index:
+      name: Filter Index
+      description: Zero-based filter wheel index (optional).
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 20
+    binning:
+      name: Binning
+      description: Camera binning factor.
+      default: 1
+      selector:
+        select:
+          options:
+            - "1"
+            - "2"
+            - "3"
+            - "4"
+    save:
+      name: Save to Disk
+      description: Whether to save the captured image to disk.
+      default: false
+      selector:
+        boolean:
+
+camera_abort_capture:
+  name: Abort Capture
+  description: Abort the current camera exposure immediately.
+
+mount_slew:
+  name: Slew Mount
+  description: Slew the telescope mount to J2000 RA/Dec coordinates.
+  fields:
+    ra:
+      name: Right Ascension
+      description: Target RA in decimal hours (0–24).
+      required: true
+      example: 5.5755
+      selector:
+        number:
+          min: 0
+          max: 24
+          step: 0.0001
+          unit_of_measurement: h
+          mode: box
+    dec:
+      name: Declination
+      description: Target Dec in decimal degrees (−90 to +90).
+      required: true
+      example: -5.3911
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.0001
+          unit_of_measurement: "°"
+          mode: box
+
+mount_park:
+  name: Park Mount
+  description: Send the telescope mount to its park position.
+
+mount_unpark:
+  name: Unpark Mount
+  description: Unpark the telescope mount.
+
+mount_set_tracking:
+  name: Set Tracking
+  description: Enable or disable sidereal tracking.
+  fields:
+    enabled:
+      name: Tracking Enabled
+      required: true
+      selector:
+        boolean:
+
+focuser_move:
+  name: Move Focuser
+  description: Move the focuser to an absolute step position.
+  fields:
+    position:
+      name: Position
+      description: Absolute focuser position in steps.
+      required: true
+      example: 25000
+      selector:
+        number:
+          min: 0
+          max: 200000
+          mode: box
+          unit_of_measurement: steps
+
+focuser_auto_focus:
+  name: Auto Focus
+  description: Trigger an autofocus routine using the configured method.
+
+filterwheel_change_filter:
+  name: Change Filter
+  description: Rotate the filter wheel to the specified filter slot.
+  fields:
+    filter_index:
+      name: Filter Index
+      description: Zero-based index of the target filter slot.
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 20
+
+guider_start:
+  name: Start Guiding
+  description: Start the autoguider.
+  fields:
+    force_calibration:
+      name: Force Calibration
+      description: Force a new calibration run before guiding begins.
+      default: false
+      selector:
+        boolean:
+
+guider_stop:
+  name: Stop Guiding
+  description: Stop the autoguider.
+
+guider_dither:
+  name: Dither
+  description: Perform a single dither move and wait for settle.
+
+dome_open:
+  name: Open Dome
+  description: Open the dome shutter.
+
+dome_close:
+  name: Close Dome
+  description: Close the dome shutter.
+
+dome_park:
+  name: Park Dome
+  description: Park the dome.
+
+sequence_start:
+  name: Start Sequence
+  description: Start the currently loaded imaging sequence.
+
+sequence_stop:
+  name: Stop Sequence
+  description: Stop the currently running sequence.
+
+sequence_load:
+  name: Load Sequence
+  description: Load a sequence file from disk (does not start it).
+  fields:
+    path:
+      name: Sequence File Path
+      description: Full Windows path to the .ninasequence file on the N.I.N.A. host.
+      required: true
+      example: "C:\\Users\\Me\\Documents\\nina\\sequences\\M42.ninasequence"
+      selector:
+        text:

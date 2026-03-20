@@ -1,0 +1,84 @@
+blueprint:
+  name: "N.I.N.A. – Guiding Quality Alert"
+  description: >
+    Sends a notification and optionally runs an autofocus when guiding error (RMS)
+    exceeds a threshold for a sustained period. Useful for catching cloud, wind
+    or seeing degradation mid-session.
+  domain: automation
+  source_url: https://github.com/christian-photo/ninaAPI
+  input:
+    rms_threshold:
+      name: RMS Threshold (arcsec)
+      description: Alert when total RMS error stays above this value.
+      default: 2.0
+      selector:
+        number:
+          min: 0.5
+          max: 10
+          step: 0.1
+          unit_of_measurement: arcsec
+
+    sustained_minutes:
+      name: Sustained Duration (minutes)
+      description: How many consecutive minutes the RMS must exceed the threshold before alerting.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: min
+
+    notify_device:
+      name: Notify Device
+      description: Mobile device to send the alert to.
+      selector:
+        text:
+
+    run_autofocus:
+      name: Run Autofocus on Alert
+      description: Trigger an autofocus routine when the alert fires (helps if the issue is focus drift).
+      default: false
+      selector:
+        boolean:
+
+    cooldown_minutes:
+      name: Cooldown Between Alerts (minutes)
+      description: Minimum time between repeated alerts.
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 120
+          unit_of_measurement: min
+
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.guider_rms_total
+    above: !input rms_threshold
+    for:
+      minutes: !input sustained_minutes
+
+condition:
+  - condition: state
+    entity_id: binary_sensor.guider_is_guiding
+    state: "on"
+
+action:
+  - service: "notify.{{ notify_device }}"
+    data:
+      title: "⚠️ Guiding Alert"
+      message: >
+        Guide RMS has been {{ states('sensor.guider_rms_total') }}" for
+        {{ sustained_minutes }} minutes (threshold: {{ rms_threshold }}").
+        RA: {{ states('sensor.guider_rms_ra') }}" |
+        Dec: {{ states('sensor.guider_rms_dec') }}"
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ run_autofocus }}"
+        sequence:
+          - service: nina_astrophotography.focuser_auto_focus
+
+mode: single
+max_exceeded: silent

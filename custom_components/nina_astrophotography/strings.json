@@ -1,0 +1,118 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to N.I.N.A.",
+        "description": "Enter the details for your N.I.N.A. instance running the Advanced API plugin (port 1888 by default).",
+        "data": {
+          "host": "Host / IP Address",
+          "port": "API Port",
+          "api_version": "API Version",
+          "poll_interval": "Poll Interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to N.I.N.A. – check host/port and ensure the Advanced API plugin is running.",
+      "unknown": "Unexpected error – check the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This N.I.N.A. instance is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "N.I.N.A. Options",
+        "data": {
+          "poll_interval": "Poll Interval (seconds)"
+        }
+      }
+    }
+  },
+  "services": {
+    "camera_cool": {
+      "name": "Cool Camera",
+      "description": "Start cooling the camera to a target temperature.",
+      "fields": {
+        "temperature": { "name": "Target Temperature (°C)", "description": "Target sensor temperature in degrees Celsius." },
+        "minutes": { "name": "Ramp Time (minutes)", "description": "Time over which to ramp to target temperature." }
+      }
+    },
+    "camera_warm": {
+      "name": "Warm Camera",
+      "description": "Gradually warm the camera sensor.",
+      "fields": {
+        "minutes": { "name": "Ramp Time (minutes)", "description": "Time over which to ramp back to ambient." }
+      }
+    },
+    "camera_capture": {
+      "name": "Capture Image",
+      "description": "Take a single exposure.",
+      "fields": {
+        "exposure": { "name": "Exposure (seconds)", "description": "Exposure duration in seconds." },
+        "gain": { "name": "Gain", "description": "Camera gain (optional, uses current setting if omitted)." },
+        "filter_index": { "name": "Filter Index", "description": "Zero-based filter wheel index (optional)." },
+        "binning": { "name": "Binning", "description": "Camera binning factor (1, 2, 3, or 4)." },
+        "save": { "name": "Save to Disk", "description": "Whether to save the image to disk." }
+      }
+    },
+    "camera_abort_capture": {
+      "name": "Abort Capture",
+      "description": "Abort the current camera exposure."
+    },
+    "mount_slew": {
+      "name": "Slew Mount",
+      "description": "Slew the mount to J2000 RA/Dec coordinates.",
+      "fields": {
+        "ra": { "name": "RA (decimal hours)", "description": "Right Ascension in decimal hours (0–24)." },
+        "dec": { "name": "Dec (decimal degrees)", "description": "Declination in decimal degrees (-90 to +90)." }
+      }
+    },
+    "mount_park": { "name": "Park Mount", "description": "Park the telescope mount." },
+    "mount_unpark": { "name": "Unpark Mount", "description": "Unpark the telescope mount." },
+    "mount_set_tracking": {
+      "name": "Set Tracking",
+      "description": "Enable or disable mount tracking.",
+      "fields": {
+        "enabled": { "name": "Tracking Enabled", "description": "True to enable tracking, false to disable." }
+      }
+    },
+    "focuser_move": {
+      "name": "Move Focuser",
+      "description": "Move the focuser to an absolute position.",
+      "fields": {
+        "position": { "name": "Position (steps)", "description": "Target focuser position in steps." }
+      }
+    },
+    "focuser_auto_focus": { "name": "Auto Focus", "description": "Run an autofocus routine." },
+    "filterwheel_change_filter": {
+      "name": "Change Filter",
+      "description": "Rotate the filter wheel to a given filter.",
+      "fields": {
+        "filter_index": { "name": "Filter Index", "description": "Zero-based index of the target filter." }
+      }
+    },
+    "guider_start": {
+      "name": "Start Guiding",
+      "description": "Start autoguiding.",
+      "fields": {
+        "force_calibration": { "name": "Force Calibration", "description": "Force a new calibration before guiding." }
+      }
+    },
+    "guider_stop": { "name": "Stop Guiding", "description": "Stop autoguiding." },
+    "guider_dither": { "name": "Dither", "description": "Perform a guider dither." },
+    "dome_open": { "name": "Open Dome", "description": "Open the dome shutter." },
+    "dome_close": { "name": "Close Dome", "description": "Close the dome shutter." },
+    "dome_park": { "name": "Park Dome", "description": "Park the dome." },
+    "sequence_start": { "name": "Start Sequence", "description": "Start the loaded imaging sequence." },
+    "sequence_stop": { "name": "Stop Sequence", "description": "Stop the running sequence." },
+    "sequence_load": {
+      "name": "Load Sequence",
+      "description": "Load a sequence file from disk.",
+      "fields": {
+        "path": { "name": "File Path", "description": "Full path to the .ninasequence file." }
+      }
+    }
+  }
+}

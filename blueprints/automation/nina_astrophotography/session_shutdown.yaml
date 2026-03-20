@@ -1,0 +1,116 @@
+blueprint:
+  name: "N.I.N.A. – Session Shutdown"
+  description: >
+    Performs a safe observatory shutdown: stops any running sequence, parks the mount,
+    warms the camera, and optionally closes the dome. Can be triggered at dawn, by
+    a time, or by a manual call.
+  domain: automation
+  source_url: https://github.com/christian-photo/ninaAPI
+  input:
+    trigger_time:
+      name: Shutdown Time
+      description: Time to trigger shutdown (e.g. 30 min before dawn).
+      default: "05:00:00"
+      selector:
+        time:
+
+    only_if_sequence_stopped:
+      name: Only Shut Down if Sequence Finished
+      description: >
+        If enabled, the shutdown will only proceed when the sequence is not running.
+        If the sequence is still running, the automation will wait up to 2 hours.
+      default: true
+      selector:
+        boolean:
+
+    warming_ramp_minutes:
+      name: Camera Warming Ramp Time (minutes)
+      description: How many minutes to take to warm the camera sensor back to ambient.
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 60
+          unit_of_measurement: min
+
+    close_dome:
+      name: Close Dome
+      description: Close the dome shutter after parking.
+      default: false
+      selector:
+        boolean:
+
+    notify_device:
+      name: Notify Device (optional)
+      description: Mobile device to notify on completion.
+      default: ""
+      selector:
+        text:
+
+trigger:
+  - platform: time
+    at: !input trigger_time
+
+condition: []
+
+action:
+  - alias: "Optionally wait for sequence to finish"
+    choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ only_if_sequence_stopped }}"
+        sequence:
+          - wait_template: "{{ is_state('binary_sensor.sequence_running', 'off') }}"
+            timeout: "02:00:00"
+            continue_on_timeout: true
+
+  - alias: "Stop sequence if still running"
+    choose:
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.sequence_running
+            state: "on"
+        sequence:
+          - service: nina_astrophotography.sequence_stop
+          - delay: "00:00:10"
+
+  - alias: "Park the mount"
+    service: nina_astrophotography.mount_park
+
+  - alias: "Disable tracking"
+    service: nina_astrophotography.mount_set_tracking
+    data:
+      enabled: false
+
+  - alias: "Warm the camera"
+    service: nina_astrophotography.camera_warm
+    data:
+      minutes: !input warming_ramp_minutes
+
+  - alias: "Wait for camera to warm"
+    delay:
+      minutes: !input warming_ramp_minutes
+
+  - alias: "Conditionally close dome"
+    choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ close_dome }}"
+        sequence:
+          - service: nina_astrophotography.dome_close
+
+  - alias: "Notify on completion"
+    choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_device != '' }}"
+        sequence:
+          - service: "notify.{{ notify_device }}"
+            data:
+              title: "🌅 N.I.N.A. Session Complete"
+              message: >
+                Session ended. Mount parked. Camera warming complete.
+                Total frames: {{ states('sensor.image_count') }}.
+
+mode: single
+max_exceeded: silent

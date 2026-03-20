@@ -1,0 +1,334 @@
+"""N.I.N.A. Astrophotography integration for Home Assistant."""
+from __future__ import annotations
+
+import logging
+
+import aiohttp
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .api import NinaApiClient, NinaConnectionError
+from .websocket import NinaWebSocketClient
+from .const import (
+    CONF_API_VERSION,
+    CONF_HOST,
+    CONF_POLL_INTERVAL,
+    CONF_PORT,
+    DEFAULT_API_VERSION,
+    DEFAULT_POLL_INTERVAL,
+    DEFAULT_PORT,
+    DOMAIN,
+    SERVICE_CAMERA_ABORT_CAPTURE,
+    SERVICE_CAMERA_CAPTURE,
+    SERVICE_CAMERA_COOL,
+    SERVICE_CAMERA_WARM,
+    SERVICE_DOME_CLOSE,
+    SERVICE_DOME_OPEN,
+    SERVICE_DOME_PARK,
+    SERVICE_FILTERWHEEL_CHANGE,
+    SERVICE_FOCUSER_AUTO_FOCUS,
+    SERVICE_FOCUSER_MOVE,
+    SERVICE_GUIDER_DITHER,
+    SERVICE_GUIDER_START,
+    SERVICE_GUIDER_STOP,
+    SERVICE_MOUNT_PARK,
+    SERVICE_MOUNT_SLEW,
+    SERVICE_MOUNT_TRACKING,
+    SERVICE_MOUNT_UNPARK,
+    SERVICE_SEQUENCE_LOAD,
+    SERVICE_SEQUENCE_START,
+    SERVICE_SEQUENCE_STOP,
+)
+from .coordinator import NinaDataCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+    Platform.LIGHT,
+    Platform.BUTTON,
+]
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up N.I.N.A. from a config entry."""
+    host = entry.data[CONF_HOST]
+    port = entry.data.get(CONF_PORT, DEFAULT_PORT)
+    api_version = entry.data.get(CONF_API_VERSION, DEFAULT_API_VERSION)
+    poll_interval = entry.options.get(
+        CONF_POLL_INTERVAL,
+        entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+    )
+
+    session = async_get_clientsession(hass)
+    client = NinaApiClient(host=host, port=port, api_version=api_version, session=session)
+
+    # Verify reachability at startup
+    try:
+        await client.get_version()
+    except NinaConnectionError as exc:
+        raise ConfigEntryNotReady(f"Cannot connect to N.I.N.A. at {host}:{port}") from exc
+
+    coordinator = NinaDataCoordinator(hass, client, poll_interval)
+    await coordinator.async_config_entry_first_refresh()
+
+    # ── WebSocket: real-time push events ──────────────────────────────────────
+    ws_client = NinaWebSocketClient(
+        host=host,
+        port=port,
+        session=session,
+        hass_event_bus_fire=hass.bus.fire,
+    )
+    await ws_client.start()
+
+    async def _on_image_save(response: dict) -> None:
+        await coordinator.async_request_refresh()
+
+    ws_client.add_listener(
+        "IMAGE-SAVE",
+        lambda r: hass.async_create_task(_on_image_save(r)),
+    )
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        "coordinator": coordinator,
+        "client": client,
+        "ws_client": ws_client,
+    }
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    _register_services(hass, client)
+
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    ws: NinaWebSocketClient | None = entry_data.get("ws_client")
+    if ws:
+        await ws.stop()
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id)
+    return unload_ok
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update — reload to apply new poll interval."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+# ─── Service registration ─────────────────────────────────────────────────────
+
+def _get_client(hass: HomeAssistant) -> NinaApiClient:
+    """Return the first available N.I.N.A. client."""
+    for entry_data in hass.data.get(DOMAIN, {}).values():
+        return entry_data["client"]
+    raise ValueError("No N.I.N.A. integration configured")
+
+
+def _register_services(hass: HomeAssistant, client: NinaApiClient) -> None:
+    """Register all HA services for N.I.N.A. control."""
+
+    # ── Camera ──────────────────────────────────────────────────────────────
+
+    async def handle_camera_cool(call: ServiceCall) -> None:
+        temperature = call.data["temperature"]
+        minutes = call.data.get("minutes", 10)
+        await _get_client(hass).cool_camera(temperature, minutes)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CAMERA_COOL,
+        handle_camera_cool,
+        schema=vol.Schema(
+            {
+                vol.Required("temperature"): vol.Coerce(float),
+                vol.Optional("minutes", default=10): vol.Coerce(float),
+            }
+        ),
+    )
+
+    async def handle_camera_warm(call: ServiceCall) -> None:
+        minutes = call.data.get("minutes", 10)
+        await _get_client(hass).warm_camera(minutes)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CAMERA_WARM,
+        handle_camera_warm,
+        schema=vol.Schema({vol.Optional("minutes", default=10): vol.Coerce(float)}),
+    )
+
+    async def handle_capture(call: ServiceCall) -> None:
+        await _get_client(hass).capture_image(
+            exposure=call.data["exposure"],
+            gain=call.data.get("gain"),
+            filter_index=call.data.get("filter_index"),
+            binning=call.data.get("binning", 1),
+            save=call.data.get("save", False),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CAMERA_CAPTURE,
+        handle_capture,
+        schema=vol.Schema(
+            {
+                vol.Required("exposure"): vol.Coerce(float),
+                vol.Optional("gain"): vol.Coerce(int),
+                vol.Optional("filter_index"): vol.Coerce(int),
+                vol.Optional("binning", default=1): vol.All(int, vol.Range(min=1, max=4)),
+                vol.Optional("save", default=False): cv.boolean,
+            }
+        ),
+    )
+
+    async def handle_abort_capture(call: ServiceCall) -> None:
+        await _get_client(hass).abort_capture()
+
+    hass.services.async_register(DOMAIN, SERVICE_CAMERA_ABORT_CAPTURE, handle_abort_capture)
+
+    # ── Mount ────────────────────────────────────────────────────────────────
+
+    async def handle_slew(call: ServiceCall) -> None:
+        await _get_client(hass).slew_mount(
+            ra=call.data["ra"], dec=call.data["dec"]
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_MOUNT_SLEW,
+        handle_slew,
+        schema=vol.Schema(
+            {
+                vol.Required("ra"): vol.Coerce(float),
+                vol.Required("dec"): vol.Coerce(float),
+            }
+        ),
+    )
+
+    async def handle_park(call: ServiceCall) -> None:
+        await _get_client(hass).park_mount()
+
+    hass.services.async_register(DOMAIN, SERVICE_MOUNT_PARK, handle_park)
+
+    async def handle_unpark(call: ServiceCall) -> None:
+        await _get_client(hass).unpark_mount()
+
+    hass.services.async_register(DOMAIN, SERVICE_MOUNT_UNPARK, handle_unpark)
+
+    async def handle_tracking(call: ServiceCall) -> None:
+        await _get_client(hass).set_tracking(call.data["enabled"])
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_MOUNT_TRACKING,
+        handle_tracking,
+        schema=vol.Schema({vol.Required("enabled"): cv.boolean}),
+    )
+
+    # ── Focuser ──────────────────────────────────────────────────────────────
+
+    async def handle_focuser_move(call: ServiceCall) -> None:
+        await _get_client(hass).move_focuser(call.data["position"])
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_FOCUSER_MOVE,
+        handle_focuser_move,
+        schema=vol.Schema({vol.Required("position"): vol.Coerce(int)}),
+    )
+
+    async def handle_autofocus(call: ServiceCall) -> None:
+        await _get_client(hass).auto_focus()
+
+    hass.services.async_register(DOMAIN, SERVICE_FOCUSER_AUTO_FOCUS, handle_autofocus)
+
+    # ── Filter Wheel ─────────────────────────────────────────────────────────
+
+    async def handle_filter_change(call: ServiceCall) -> None:
+        await _get_client(hass).change_filter(call.data["filter_index"])
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_FILTERWHEEL_CHANGE,
+        handle_filter_change,
+        schema=vol.Schema({vol.Required("filter_index"): vol.Coerce(int)}),
+    )
+
+    # ── Guider ───────────────────────────────────────────────────────────────
+
+    async def handle_guider_start(call: ServiceCall) -> None:
+        force_cal = call.data.get("force_calibration", False)
+        await _get_client(hass).start_guiding(force_calibration=force_cal)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GUIDER_START,
+        handle_guider_start,
+        schema=vol.Schema(
+            {vol.Optional("force_calibration", default=False): cv.boolean}
+        ),
+    )
+
+    async def handle_guider_stop(call: ServiceCall) -> None:
+        await _get_client(hass).stop_guiding()
+
+    hass.services.async_register(DOMAIN, SERVICE_GUIDER_STOP, handle_guider_stop)
+
+    async def handle_dither(call: ServiceCall) -> None:
+        await _get_client(hass).dither()
+
+    hass.services.async_register(DOMAIN, SERVICE_GUIDER_DITHER, handle_dither)
+
+    # ── Dome ─────────────────────────────────────────────────────────────────
+
+    async def handle_dome_open(call: ServiceCall) -> None:
+        await _get_client(hass).open_dome()
+
+    hass.services.async_register(DOMAIN, SERVICE_DOME_OPEN, handle_dome_open)
+
+    async def handle_dome_close(call: ServiceCall) -> None:
+        await _get_client(hass).close_dome()
+
+    hass.services.async_register(DOMAIN, SERVICE_DOME_CLOSE, handle_dome_close)
+
+    async def handle_dome_park(call: ServiceCall) -> None:
+        await _get_client(hass).park_dome()
+
+    hass.services.async_register(DOMAIN, SERVICE_DOME_PARK, handle_dome_park)
+
+    # ── Sequence ─────────────────────────────────────────────────────────────
+
+    async def handle_seq_start(call: ServiceCall) -> None:
+        await _get_client(hass).start_sequence()
+
+    hass.services.async_register(DOMAIN, SERVICE_SEQUENCE_START, handle_seq_start)
+
+    async def handle_seq_stop(call: ServiceCall) -> None:
+        await _get_client(hass).stop_sequence()
+
+    hass.services.async_register(DOMAIN, SERVICE_SEQUENCE_STOP, handle_seq_stop)
+
+    async def handle_seq_load(call: ServiceCall) -> None:
+        await _get_client(hass).load_sequence(call.data["path"])
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SEQUENCE_LOAD,
+        handle_seq_load,
+        schema=vol.Schema({vol.Required("path"): cv.string}),
+    )

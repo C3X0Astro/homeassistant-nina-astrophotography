@@ -1,0 +1,59 @@
+blueprint:
+  name: "N.I.N.A. – Meridian Flip Warning"
+  description: >
+    Sends a notification a configurable number of minutes before a meridian flip
+    is due, so you can monitor or prepare. Also fires an event when the flip completes.
+  domain: automation
+  source_url: https://github.com/christian-photo/ninaAPI
+  input:
+    warning_minutes:
+      name: Warning Before Flip (minutes)
+      description: Notify when this many minutes remain until the meridian flip.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+
+    notify_device:
+      name: Notify Device
+      description: Mobile device to send the warning to.
+      selector:
+        text:
+
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.mount_time_to_meridian_flip
+    below: !input warning_minutes
+
+condition:
+  - condition: state
+    entity_id: binary_sensor.mount_tracking
+    state: "on"
+  - condition: state
+    entity_id: binary_sensor.sequence_running
+    state: "on"
+
+action:
+  - service: "notify.{{ notify_device }}"
+    data:
+      title: "🔄 Meridian Flip Approaching"
+      message: >
+        Meridian flip in approximately
+        {{ states('sensor.mount_time_to_meridian_flip') | round(1) }} minutes.
+        Current target: {{ states('sensor.sequence_target_name') }}.
+
+  - wait_for_trigger:
+      - platform: event
+        event_type: nina_mount_after_flip
+    timeout: "01:00:00"
+    continue_on_timeout: false
+
+  - service: "notify.{{ notify_device }}"
+    data:
+      title: "✅ Meridian Flip Complete"
+      message: "N.I.N.A. has completed the meridian flip. Guiding and imaging resuming."
+
+mode: single
+max_exceeded: silent
