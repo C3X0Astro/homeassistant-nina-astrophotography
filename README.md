@@ -1,6 +1,8 @@
 > [!NOTE]
 > **AI-Assisted Development**
 > This integration was built with the assistance of [Claude](https://claude.ai) (Anthropic). All code has been reviewed, tested against a live N.I.N.A. instance, and is maintained by a human author. AI assistance was used to accelerate development — the design decisions, testing, and ongoing maintenance are my own.
+> [![AI Assisted](https://img.shields.io/badge/built%20with-Claude%20AI-7b8de8?style=flat-square&logo=anthropic)](https://claude.ai)
+
 
 # N.I.N.A. Astrophotography – Home Assistant Integration
 
