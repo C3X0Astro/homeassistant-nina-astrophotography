@@ -330,8 +330,24 @@ class NinaSensor(CoordinatorEntity[NinaDataCoordinator], SensorEntity):
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    async_add_entities(
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry_data["coordinator"]
+    frame_store = entry_data["frame_store"]
+
+    # Standard polled sensors
+    entities = [
         NinaSensor(coordinator, description, entry.entry_id)
         for description in SENSOR_DESCRIPTIONS
+    ]
+
+    # Per-frame push-driven statistics sensors
+    from .frame_stats_sensor import (
+        FRAME_SENSOR_DESCRIPTIONS,
+        NinaFrameStatisticsSensor,
     )
+    entities += [
+        NinaFrameStatisticsSensor(frame_store, description, entry.entry_id)
+        for description in FRAME_SENSOR_DESCRIPTIONS
+    ]
+
+    async_add_entities(entities)

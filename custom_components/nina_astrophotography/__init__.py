@@ -15,6 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import NinaApiClient, NinaConnectionError
 from .websocket import NinaWebSocketClient
+from .frame_statistics import NinaFrameStatisticsStore
 from .const import (
     CONF_API_VERSION,
     CONF_HOST,
@@ -91,7 +92,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     await ws_client.start()
 
+    # ── Per-frame statistics store ───────────────────────────────────────────
+    frame_store = NinaFrameStatisticsStore()
+
     async def _on_image_save(response: dict) -> None:
+        frame_store.push_frame(response)
         await coordinator.async_request_refresh()
 
     ws_client.add_listener(
@@ -99,10 +104,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         lambda r: hass.async_create_task(_on_image_save(r)),
     )
 
+    # Reset per-session stats when a new sequence starts
+    def _on_sequence_starting(response: dict) -> None:
+        frame_store.reset()
+
+    ws_client.add_listener("SEQUENCE-STARTING", _on_sequence_starting)
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "coordinator": coordinator,
         "client": client,
         "ws_client": ws_client,
+        "frame_store": frame_store,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
