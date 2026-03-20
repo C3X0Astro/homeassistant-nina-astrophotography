@@ -13,7 +13,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-WS_URL = "ws://{host}:{port}/v2"
+WS_URL = "ws://{host}:{port}/v2/socket"
 
 # Events that carry no extra payload beyond the event name
 SIMPLE_EVENTS = {
