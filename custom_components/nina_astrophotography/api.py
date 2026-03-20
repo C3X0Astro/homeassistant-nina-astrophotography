@@ -94,30 +94,30 @@ class NinaApiClient:
 
     # Mount / Telescope
     async def get_mount(self):
-        return await self._get("/equipment/telescope/info")
+        return await self._get("/equipment/mount/info")
 
     async def connect_mount(self):
-        return await self._get("/equipment/telescope/connect")
+        return await self._get("/equipment/mount/connect")
 
     async def disconnect_mount(self):
-        return await self._get("/equipment/telescope/disconnect")
+        return await self._get("/equipment/mount/disconnect")
 
     async def slew_mount(self, ra, dec):
-        return await self._get("/equipment/telescope/slew-to-coordinates-j2000",
+        return await self._get("/equipment/mount/slew-to-coordinates-j2000",
                                params={"ra": ra, "dec": dec})
 
     async def park_mount(self):
-        return await self._get("/equipment/telescope/park")
+        return await self._get("/equipment/mount/park")
 
     async def unpark_mount(self):
-        return await self._get("/equipment/telescope/unpark")
+        return await self._get("/equipment/mount/unpark")
 
     async def set_tracking(self, enabled):
-        return await self._get("/equipment/telescope/tracking",
+        return await self._get("/equipment/mount/tracking",
                                params={"on": str(enabled).lower()})
 
     async def find_home(self):
-        return await self._get("/equipment/telescope/find-home")
+        return await self._get("/equipment/mount/find-home")
 
     # Focuser
     async def get_focuser(self):
