@@ -94,30 +94,30 @@ class NinaApiClient:
 
     # Mount / Telescope
     async def get_mount(self):
-        return await self._get("/equipment/mount/info")
+        return await self._get("/equipment/telescope/info")
 
     async def connect_mount(self):
-        return await self._get("/equipment/mount/connect")
+        return await self._get("/equipment/telescope/connect")
 
     async def disconnect_mount(self):
-        return await self._get("/equipment/mount/disconnect")
+        return await self._get("/equipment/telescope/disconnect")
 
     async def slew_mount(self, ra, dec):
-        return await self._get("/equipment/mount/slew-to-coordinates-j2000",
+        return await self._get("/equipment/telescope/slew-to-coordinates-j2000",
                                params={"ra": ra, "dec": dec})
 
     async def park_mount(self):
-        return await self._get("/equipment/mount/park")
+        return await self._get("/equipment/telescope/park")
 
     async def unpark_mount(self):
-        return await self._get("/equipment/mount/unpark")
+        return await self._get("/equipment/telescope/unpark")
 
     async def set_tracking(self, enabled):
-        return await self._get("/equipment/mount/tracking",
+        return await self._get("/equipment/telescope/tracking",
                                params={"on": str(enabled).lower()})
 
     async def find_home(self):
-        return await self._get("/equipment/mount/find-home")
+        return await self._get("/equipment/telescope/find-home")
 
     # Focuser
     async def get_focuser(self):
@@ -241,6 +241,26 @@ class NinaApiClient:
 
 
 
+    # Weather station
+    async def get_weather(self):
+        return await self._get("/equipment/weather/info")
+
+    async def connect_weather(self):
+        return await self._get("/equipment/weather/connect")
+
+    async def disconnect_weather(self):
+        return await self._get("/equipment/weather/disconnect")
+
+    # Safety monitor
+    async def get_safetymonitor(self):
+        return await self._get("/equipment/safetymonitor/info")
+
+    async def connect_safetymonitor(self):
+        return await self._get("/equipment/safetymonitor/connect")
+
+    async def disconnect_safetymonitor(self):
+        return await self._get("/equipment/safetymonitor/disconnect")
+
     # Image streaming — returns raw JPEG bytes (use stream=True)
     async def get_image_stream_url(self, index: int = 0, quality: int = 85, stretch: bool = True) -> str:
         """Return URL for fetching a JPEG image directly.
@@ -285,6 +305,8 @@ class NinaApiClient:
             "flatdevice": self.get_flatdevice(),
             "sequence": self.get_sequence(),
             "image_history": self.get_image_history(count=1),
+            "weather": self.get_weather(),
+            "safetymonitor": self.get_safetymonitor(),
         }
         results = {}
         responses = await asyncio.gather(*tasks.values(), return_exceptions=True)

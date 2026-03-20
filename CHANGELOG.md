@@ -4,82 +4,89 @@ All notable changes to the N.I.N.A. Astrophotography Home Assistant integration 
 
 ---
 
+## [1.4.0] - 2026-03-20
+
+### Added
+
+#### Weather station sensors — 14 new sensor entities (`sensor.py`)
+Full ASCOM ObservingConditions standard mapped to HA sensors. Works with any weather driver connected in N.I.N.A.: OpenWeatherMap, Pegasus UPB, AAG CloudWatcher, ASCOM Alpaca weather stations, and others.
+
+| Entity | Description | Unit |
+|---|---|---|
+| `sensor.weather_temperature` | Ambient air temperature | °C |
+| `sensor.weather_humidity` | Relative humidity | % |
+| `sensor.dew_point` | Dew point temperature | °C |
+| `sensor.wind_speed` | Wind speed | m/s |
+| `sensor.wind_direction` | Wind direction | ° |
+| `sensor.wind_gust` | Wind gust speed | m/s |
+| `sensor.barometric_pressure` | Atmospheric pressure | hPa |
+| `sensor.cloud_cover` | Cloud cover percentage | % |
+| `sensor.rain_rate` | Rain rate | mm/h |
+| `sensor.sky_quality` | Sky quality (SQM) | mag/arcsec² |
+| `sensor.sky_brightness` | Sky brightness | lux |
+| `sensor.sky_temperature` | Sky temperature (IR) | °C |
+| `sensor.atmospheric_seeing` | Atmospheric seeing (FWHM) | arcsec |
+| `sensor.weather_station_name` | Weather driver name | — |
+
+#### Safety monitor — 3 new entities (`binary_sensor.py`)
+| Entity | Description |
+|---|---|
+| `binary_sensor.safety_monitor_connected` | Safety monitor device connectivity |
+| `binary_sensor.observatory_safe` | Safety state using HA SAFETY device class (`on` = **unsafe**, per HA convention) |
+| `sensor.safety_monitor_name` | Safety monitor device name |
+
+#### Weather abort blueprint (`blueprints/automation/nina_astrophotography/weather_abort.yaml`)
+The most critical observatory automation — a full safe-shutdown triggered by unsafe conditions. Supports:
+- Safety monitor going unsafe (immediate trigger, no delay)
+- Wind speed threshold with configurable sustained duration
+- Rain rate threshold
+- Cloud cover threshold
+- Optional auto-resume when conditions clear
+- Configurable shutdown steps: stop sequence → park mount → warm camera → close dome
+- Pre- and post-shutdown mobile notifications with frame count
+
+#### Weather & Safety Lovelace Card (`www/nina-weather-card.js`)
+- Safety banner at top: green `Conditions safe` / pulsing red `UNSAFE — conditions exceeded` / grey if disconnected
+- Dew point proximity warning: fires when temperature is within 3°C of dew point
+- Atmosphere grid: temperature, humidity, dew point, pressure with colour-coded warning thresholds
+- Wind panel with animated compass rose (arrow colour changes red at dangerous speeds)
+- Sky conditions grid: cloud cover, rain rate, sky temperature, atmospheric seeing
+- Sky quality (SQM) progress bar mapped to Bortle scale with qualitative label (Excellent/Good/Moderate/Poor)
+- Graceful empty state when no weather station is connected in N.I.N.A.
+
+Add to a dashboard:
+```yaml
+type: custom:nina-weather-card
+```
+
+---
+
 ## [1.3.0] - 2026-03-20
 
 ### Added
 
 #### Image streaming via Advanced API (`api.py`)
-Added `get_image_bytes()` and `get_image_stream_url()` methods to `NinaApiClient`. The Advanced API v2.2.x serves JPEG frames directly at:
+Added `get_image_bytes()` and `get_image_stream_url()` methods to `NinaApiClient`. The Advanced API serves JPEG frames at `GET /v2/api/image?index=0&stream=true&useAutoStretch=true`, enabling direct image retrieval without a separate plugin.
 
-```
-GET /v2/api/image?index=0&stream=true&useAutoStretch=true
-```
+#### HA Image entity (`image.py`)
+New `image.nina_latest_captured_frame` entity using HA's native `ImageEntity` platform. Updates automatically when an `IMAGE-SAVE` WebSocket event fires. Compatible with the built-in Picture Entity Card and any HA integration that consumes image entities.
 
-`index=0` returns the most recent frame; `index=1` returns the one before it, and so on through history. `useAutoStretch=true` applies N.I.N.A.'s auto-stretch so the image is viewable without further processing.
+#### Image Panel Lovelace Card (`www/nina-image-panel-card.js`)
+Full-featured image viewer card with:
+- Live image fetched directly from the N.I.N.A. PC streaming endpoint
+- Stats overlay: filter, HFR, star count, guide RMS, target name
+- ADU histogram derived from frame statistics sensors (min/max/mean/median visualisation)
+- Recent frames strip: last 6 thumbnails with filter labels, click to browse back through history
+- Stats row below image: HFR (colour-coded), star count, mean ADU, exposure time
+- Click-to-fullscreen (loads full-quality version in modal)
+- Auto-refreshes on `nina_image_save` HA event — no manual reload needed
+- Exposing indicator bar animates while camera is actively integrating
 
-#### HA Image entity — `image.nina_latest_captured_frame` (`image.py`)
-A native Home Assistant `ImageEntity` that fetches JPEG bytes from the streaming endpoint on demand. Behaviour:
-- Automatically marks itself updated the instant an `IMAGE-SAVE` WebSocket event fires — no polling delay
-- Compatible with the built-in **Picture Entity Card** and any HA integration that reads image entities
-- Returns cached bytes on network error so the last good frame remains visible after a brief disconnect
-- `image_last_updated` timestamp advances on every new frame, triggering browser cache invalidation in frontend cards
-
-Use in any standard HA card:
-```yaml
-type: picture-entity
-entity: image.nina_latest_captured_frame
-```
-
-#### Image Panel Lovelace Card — `www/nina-image-panel-card.js`
-A full-featured image viewer card fetching frames directly from the N.I.N.A. PC streaming endpoint.
-
-**Features:**
-- Live image display with auto-refresh on `nina_image_save` HA events
-- Stats overlay on the image: filter name, HFR, star count, guide RMS string, target name
-- Animated exposing indicator bar while `binary_sensor.camera_exposing` is `on`
-- **ADU histogram** synthesised from `sensor.last_frame_min_adu`, `max_adu`, `mean_adu`, `median_adu` — shows approximate pixel distribution with mean (teal) and median (dashed) marker lines and a saturation warning zone
-- **Stats row** below the image: HFR (green < 2px / amber > 3.5px), star count, mean ADU, exposure time
-- **Recent frames strip**: last 6 thumbnails loaded at reduced quality (40%) for fast rendering, with filter labels overlaid; click any thumbnail to jump to that frame
-- **Click-to-fullscreen**: click the image to open a modal showing the full-quality version
-- Graceful no-image state with setup hint before the first frame is captured
-
-**Card configuration:**
+Card requires `host` config pointing to the N.I.N.A. PC:
 ```yaml
 type: custom:nina-image-panel-card
-host: 192.168.1.100      # N.I.N.A. PC IP address (required)
-port: 1888               # API port (default: 1888)
-stretch: true            # Apply N.I.N.A. auto-stretch (default: true)
-quality: 85              # JPEG quality 1–100 (default: 85)
-show_strip: true         # Show recent frames strip (default: true)
-show_histogram: true     # Show ADU histogram (default: true)
-strip_count: 6           # Thumbnails in strip (default: 6)
-refresh_on_save: true    # Auto-refresh on IMAGE-SAVE event (default: true)
-```
-
-> **Note:** The card fetches images directly from the N.I.N.A. PC, not proxied through HA. Your browser must be able to reach `host:port` on your local network. This works on a home LAN. For remote access outside your network, use a VPN.
-
-> **Prerequisite:** Ensure **Create Thumbnails** is enabled in the Advanced API plugin settings in N.I.N.A. (it was visible as ON in the plugin screenshot).
-
-#### Sky Map Lovelace Card — `www/nina-sky-map-card.js`
-An all-sky stereographic projection showing live telescope pointing.
-
-**Features:**
-- Stereographic polar projection (standard planisphere view): zenith at centre, horizon as outer green ring, North at top
-- Altitude rings at 15°/30°/45°/60°/75° with degree labels
-- Dashed azimuth spokes every 45°, N/S/E/W compass labels
-- **Star field**: 40 bright stars (Sirius through Polaris) projected from RA/Dec using the observer's latitude and the mount's sidereal time (`sensor.mount_sidereal_time`) — rotates correctly as the night progresses. Orion belt stars connected with faint constellation lines. Subtle Milky Way band
-- **Meridian line**: dashed purple line. Pulses amber and shows countdown label when `sensor.mount_time_to_meridian_flip` < 15 minutes
-- **Telescope reticle**: crosshair + circle at current Alt/Az position with soft glow. Colour reflects mount state — teal (tracking), amber (parked), orange-red (slewing)
-- **Pointing trail**: last 60 positions drawn as a fading teal line
-- Info row: altitude, azimuth, RA (h m s format), Dec (° ′ ″ format)
-- Status bar: tracking / parked / slewing / disconnected state
-
-**Card configuration:**
-```yaml
-type: custom:nina-sky-map-card
-latitude: 38.5      # Your observing latitude — improves star field accuracy (default: 40)
-trail_length: 60    # Historical positions in trail (default: 60)
-map_size: 320       # Canvas diameter in px (default: 320)
+host: 192.168.1.100
+port: 1888
 ```
 
 ---

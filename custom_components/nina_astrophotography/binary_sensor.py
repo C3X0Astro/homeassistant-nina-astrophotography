@@ -179,6 +179,35 @@ BINARY_SENSOR_DESCRIPTIONS: list[NinaBinarySensorDescription] = [
         icon="mdi:play-circle",
         value_fn=lambda d: _safe(d, "sequence", "Response", "Status") == "Running",
     ),
+
+    # ── Weather station ───────────────────────────────────────────────────
+    NinaBinarySensorDescription(
+        key="weather_connected",
+        name="Weather Station Connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        icon="mdi:weather-partly-cloudy",
+        value_fn=lambda d: _bool(d, "weather", "Response", "Connected"),
+    ),
+
+    # ── Safety monitor ────────────────────────────────────────────────────
+    NinaBinarySensorDescription(
+        key="safetymonitor_connected",
+        name="Safety Monitor Connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        icon="mdi:shield-check",
+        value_fn=lambda d: _bool(d, "safetymonitor", "Response", "Connected"),
+    ),
+    NinaBinarySensorDescription(
+        key="safetymonitor_is_safe",
+        name="Observatory Safe",
+        device_class=BinarySensorDeviceClass.SAFETY,
+        icon="mdi:shield-check-outline",
+        # IsSafe=True means conditions are SAFE (binary_sensor "on" = problem by HA convention
+        # for SAFETY class, but we invert: on = safe so the icon makes sense in dashboards)
+        # Using SAFETY device class: on = unsafe. We flip: store !IsSafe so "on" means UNSAFE
+        # so HA's red alert icon fires correctly when conditions turn bad.
+        value_fn=lambda d: not _bool(d, "safetymonitor", "Response", "IsSafe"),
+    ),
 ]
 
 
