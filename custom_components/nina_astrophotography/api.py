@@ -13,11 +13,62 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class NinaApiError(Exception):
-    """Raised when the N.I.N.A. API returns an error."""
+    """Raised when N.I.N.A. answers, but not with what was asked for."""
+
+
+class NinaEndpointError(NinaApiError):
+    """Raised when this NINA build does not serve the requested path.
+
+    Distinct from a refused command: a refusal means the equipment said no and
+    is worth retrying, a wrong path never will be.
+    """
 
 
 class NinaConnectionError(Exception):
     """Raised when a connection to N.I.N.A. cannot be established."""
+
+
+# Statuses that mean the path itself is not served. Everything else, 5xx
+# included, is treated as transient: a handler that threw or a server still
+# starting up will answer normally later, and failing the config entry for
+# one of those is far worse than retrying a path that never returns.
+_PATH_NOT_SERVED = (404, 405, 501)
+
+
+def _http_error(method: str, path: str, status: int, body: str = "") -> NinaApiError:
+    """Build the error for a non-200 reply.
+
+    The body is an EmbedIO HTML error page, so it is collapsed and truncated
+    rather than dumped into the log.
+    """
+    summary = " ".join(body.split())[:120]
+    detail = f": {summary}" if summary else ""
+    message = f"{method} {path} -> {status}{detail}"
+    if status in _PATH_NOT_SERVED:
+        return NinaEndpointError(message)
+    return NinaApiError(message)
+
+
+def _raise_for_envelope(path: str, payload) -> None:
+    """Raise if the response envelope reports a failure.
+
+    The API answers HTTP 200 for everything, including refused commands, and
+    carries the real outcome in the body.
+
+    `Success` alone is not enough to key on: some handlers assign it straight
+    from the driver's return value, so it can be false on a call that worked —
+    a successful tracking change answers `Success: false` with an empty Error
+    and a 200 code. Genuine failures are built by CreateErrorTable, which
+    always sets both a message and a 4xx/5xx code.
+    """
+    if not isinstance(payload, dict) or payload.get("Success") is not False:
+        return
+    error = payload.get("Error")
+    status = payload.get("StatusCode")
+    if not error and status in (None, 200):
+        return
+    detail = f" (StatusCode {status})" if status is not None else ""
+    raise NinaApiError(f"{path}: {error or 'unknown error'}{detail}")
 
 
 class NinaApiClient:
@@ -33,14 +84,18 @@ class NinaApiClient:
             async with self._session.get(
                 url, params=params, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
-                if resp.status == 200:
-                    return await resp.json(content_type=None)
-                text = await resp.text()
-                raise NinaApiError(f"GET {path} -> {resp.status}: {text}")
-        except aiohttp.ClientConnectorError as exc:
-            raise NinaConnectionError(f"Cannot reach N.I.N.A. at {url}") from exc
+                if resp.status != 200:
+                    raise _http_error("GET", path, resp.status, await resp.text())
+                payload = await resp.json(content_type=None)
         except asyncio.TimeoutError as exc:
             raise NinaConnectionError(f"Timeout reaching N.I.N.A. at {url}") from exc
+        except aiohttp.ClientError as exc:
+            # ClientError, not ClientConnectorError: a crashed NINA raises
+            # ServerDisconnectedError, a truncated reply ClientPayloadError.
+            raise NinaConnectionError(f"Cannot reach N.I.N.A. at {url}: {exc}") from exc
+
+        _raise_for_envelope(path, payload)
+        return payload
 
     async def _post(self, path, data=None, params=None):
         url = self._base + path
@@ -50,15 +105,16 @@ class NinaApiClient:
             ) as resp:
                 if resp.status in (200, 204):
                     try:
-                        return await resp.json(content_type=None)
+                        payload = await resp.json(content_type=None)
                     except Exception:
                         return {}
-                text = await resp.text()
-                raise NinaApiError(f"POST {path} -> {resp.status}: {text}")
-        except aiohttp.ClientConnectorError as exc:
-            raise NinaConnectionError(f"Cannot reach N.I.N.A. at {url}") from exc
+                    _raise_for_envelope(path, payload)
+                    return payload
+                raise _http_error("POST", path, resp.status, await resp.text())
         except asyncio.TimeoutError as exc:
             raise NinaConnectionError(f"Timeout reaching N.I.N.A. at {url}") from exc
+        except aiohttp.ClientError as exc:
+            raise NinaConnectionError(f"Cannot reach N.I.N.A. at {url}: {exc}") from exc
 
     # Application
     async def get_version(self):
@@ -268,28 +324,37 @@ class NinaApiClient:
         The Advanced API streams the image when stream=true.
         Use in the Lovelace card img src attribute.
         """
-        params = f"index={index}&stream=true&quality={quality}"
+        params = f"stream=true&quality={quality}"
         if stretch:
             params += "&useAutoStretch=true"
-        return f"{self._base}/image?{params}"
+        return f"{self._base}/image/{index}?{params}"
 
     async def get_image_bytes(self, index: int = 0, quality: int = 85, stretch: bool = True) -> bytes:
         """Fetch a JPEG image and return raw bytes. Used for HA image entities."""
-        url = self._base + "/image"
-        params = {"index": index, "stream": "true", "quality": quality}
+        path = f"/image/{index}"
+        url = self._base + path
+        params = {"stream": "true", "quality": quality}
         if stretch:
             params["useAutoStretch"] = "true"
         try:
             async with self._session.get(
                 url, params=params, timeout=aiohttp.ClientTimeout(total=30)
             ) as resp:
-                if resp.status == 200:
+                if resp.status != 200:
+                    raise _http_error("GET", path, resp.status)
+                # A refusal arrives as 200 carrying the JSON envelope. With
+                # stream=true a real image is served as image/jpeg or
+                # image/png, so the content type is what separates them.
+                if (resp.content_type or "").startswith("image/"):
                     return await resp.read()
-                raise NinaApiError(f"GET /image -> {resp.status}")
-        except aiohttp.ClientConnectorError as exc:
-            raise NinaConnectionError(f"Cannot reach N.I.N.A. at {url}") from exc
+                _raise_for_envelope(path, await resp.json(content_type=None))
+                raise NinaApiError(
+                    f"GET {path} returned {resp.content_type}, not an image"
+                )
         except asyncio.TimeoutError as exc:
-            raise NinaConnectionError(f"Timeout fetching image") from exc
+            raise NinaConnectionError("Timeout fetching image") from exc
+        except aiohttp.ClientError as exc:
+            raise NinaConnectionError(f"Cannot reach N.I.N.A. at {url}: {exc}") from exc
 
     # Poll all equipment concurrently
     async def poll_all(self):
@@ -309,11 +374,37 @@ class NinaApiClient:
             "safetymonitor": self.get_safetymonitor(),
         }
         results = {}
+        failures = {}
         responses = await asyncio.gather(*tasks.values(), return_exceptions=True)
         for key, response in zip(tasks.keys(), responses):
             if isinstance(response, Exception):
                 _LOGGER.debug("Poll error for %s: %s", key, response)
+                failures[key] = response
                 results[key] = {}
             else:
                 results[key] = response
+
+        # A rig with no dome must not fail the whole poll. But if nothing
+        # answered, NINA is gone and the coordinator has to know, or every
+        # entity carries on publishing defaults.
+        if len(failures) == len(tasks):
+            connection_errors = [
+                exc for exc in failures.values()
+                if isinstance(exc, NinaConnectionError)
+            ]
+            if connection_errors:
+                raise NinaConnectionError(
+                    f"No N.I.N.A. subsystem responded: {connection_errors[0]}"
+                )
+            if all(isinstance(e, NinaEndpointError) for e in failures.values()):
+                raise NinaEndpointError(
+                    "N.I.N.A. served none of the expected endpoints, so this "
+                    "client is talking to an API it does not understand: "
+                    f"{next(iter(failures.values()))}"
+                )
+            raise NinaApiError(
+                "Every N.I.N.A. subsystem returned an error: "
+                f"{next(iter(failures.values()))}"
+            )
+
         return results

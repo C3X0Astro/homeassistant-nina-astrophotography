@@ -9,11 +9,16 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import NinaApiClient, NinaConnectionError
+from .api import (
+    NinaApiClient,
+    NinaApiError,
+    NinaConnectionError,
+    NinaEndpointError,
+)
 from .websocket import NinaWebSocketClient
 from .frame_statistics import NinaFrameStatisticsStore
 from .const import (
@@ -78,8 +83,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Verify reachability at startup
     try:
         await client.get_version()
-    except NinaConnectionError as exc:
-        raise ConfigEntryNotReady(f"Cannot connect to N.I.N.A. at {host}:{port}") from exc
+    except NinaEndpointError as exc:
+        # A path this build does not serve will not appear later, so fail the
+        # entry rather than retrying forever.
+        raise ConfigEntryError(
+            f"N.I.N.A. at {host}:{port} does not serve the expected API: {exc}"
+        ) from exc
+    except (NinaConnectionError, NinaApiError) as exc:
+        # Both are transient at startup — NINA may still be booting, or
+        # answering unhappily while equipment connects. ConfigEntryNotReady
+        # retries; an uncaught exception fails the entry permanently.
+        raise ConfigEntryNotReady(
+            f"N.I.N.A. at {host}:{port} is not ready: {exc}"
+        ) from exc
 
     coordinator = NinaDataCoordinator(hass, client, poll_interval)
     await coordinator.async_config_entry_first_refresh()
